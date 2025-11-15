@@ -1,7 +1,8 @@
 # ai_service.py
+
 """
-Сервис для работы с AI (OpenRouter API)
-Обработка запросов к AI ассистенту
+AI сервис для обработки запросов через OpenRouter API
+Интеграция с AI моделями для умных ответов
 """
 
 import requests
@@ -10,9 +11,8 @@ from typing import Optional, Dict, List
 from config import Config
 from repositories import ClientRepository, TransactionRepository
 
-
 class AIService:
-    """Сервис для взаимодействия с AI"""
+    """AI сервис"""
     
     def __init__(self):
         """Инициализация AI сервиса"""
@@ -21,7 +21,24 @@ class AIService:
         self.model = Config.AI_MODEL
         self.system_prompt = Config.AI_SYSTEM_PROMPT
     
-    def _build_context(self, client_id: Optional[int]) -> str:
+    def _normalize_direction(self, direction: str) -> str:
+        """
+        Нормализует направление транзакции для унифицированной обработки
+        
+        Args:
+            direction: Credit/Debit или income/expense
+            
+        Returns:
+            'income' или 'expense'
+        """
+        direction_lower = direction.lower()
+        if direction_lower in ['credit', 'income']:
+            return 'income'
+        elif direction_lower in ['debit', 'expense']:
+            return 'expense'
+        return direction_lower
+    
+    def build_context(self, client_id: Optional[str]) -> str:
         """
         Построить контекст для AI на основе данных клиента
         
@@ -29,7 +46,7 @@ class AIService:
             client_id: ID клиента
             
         Returns:
-            str: текстовый контекст с данными
+            str: Контекст для AI
         """
         if not client_id:
             return ""
@@ -39,92 +56,90 @@ class AIService:
         if not client:
             return ""
         
-        # Получаем транзакции
+        # Получаем транзакции и статистику
         transactions = TransactionRepository.get_by_client(client_id, limit=50)
         summary = TransactionRepository.get_summary(client_id)
         categories = TransactionRepository.get_by_category(client_id)
         
         # Формируем контекст
-        context = f"""
-📋 ДАННЫЕ КЛИЕНТА:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👤 Имя: {client['name']}
-📧 Email: {client['email'] or 'Не указан'}
-📱 Телефон: {client['phone'] or 'Не указан'}
-📊 Статус: {client['status']}
+        context = f"""Данные клиента:
+- Имя клиента: {client['name']}
+- Email: {client['email'] or 'Не указан'}
+- Телефон: {client['phone'] or 'Не указан'}
+- Статус: {client['status']}
 
-💰 ФИНАНСОВАЯ СВОДКА:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💵 Доходы: {summary['total_income']:,.2f} ₽
-💸 Расходы: {summary['total_expense']:,.2f} ₽
-📈 Баланс: {summary['balance']:,.2f} ₽
-🔢 Всего транзакций: {summary['transaction_count']}
-
+Финансовая сводка:
+- Общий доход: {summary['total_income']:,.2f} ₽
+- Общие расходы: {summary['total_expense']:,.2f} ₽
+- Баланс: {summary['balance']:,.2f} ₽
+- Всего транзакций: {summary['transaction_count']}
 """
         
-        # Добавляем статистику по категориям
+        # Добавляем категории
         if categories:
-            context += "📊 СТАТИСТИКА ПО КАТЕГОРИЯМ:\n"
-            context += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            context += "\nТранзакции по категориям:\n"
             
-            income_cats = [c for c in categories if c['direction'] == 'income']
-            expense_cats = [c for c in categories if c['direction'] == 'expense']
+            # Разделяем на доходы и расходы
+            income_cats = [c for c in categories if self._normalize_direction(c['direction']) == 'income']
+            expense_cats = [c for c in categories if self._normalize_direction(c['direction']) == 'expense']
             
             if income_cats:
-                context += "💰 Доходы:\n"
+                context += "\nДоходы:\n"
                 for cat in income_cats:
-                    context += f"  • {cat['category']}: {cat['total']:,.2f} ₽ ({cat['count']} транз.)\n"
-                context += "\n"
+                    context += f"  💰 {cat['category']}: +{cat['total']:,.2f} ₽ ({cat['count']} транзакций)\n"
             
             if expense_cats:
-                context += "💸 Расходы:\n"
+                context += "\nРасходы:\n"
                 for cat in expense_cats:
-                    context += f"  • {cat['category']}: {cat['total']:,.2f} ₽ ({cat['count']} транз.)\n"
-                context += "\n"
+                    context += f"  💸 {cat['category']}: -{cat['total']:,.2f} ₽ ({cat['count']} транзакций)\n"
         
-        # Добавляем последние транзакции
+        # Добавляем последние 10 транзакций
         if transactions:
-            context += "📝 ПОСЛЕДНИЕ ТРАНЗАКЦИИ (топ 10):\n"
-            context += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            
+            context += f"\nПоследние 10 транзакций:\n"
             for tx in transactions[:10]:
-                emoji = "💚" if tx['direction'] == 'income' else "❤️"
-                sign = "+" if tx['direction'] == 'income' else "-"
-                context += f"{emoji} {tx['transaction_date']} | {tx['category']}: {sign}{tx['amount']:,.2f} ₽\n"
-                if tx['description']:
-                    context += f"   💬 {tx['description']}\n"
+                # Определяем направление
+                normalized_direction = self._normalize_direction(tx['direction'])
+                emoji = "💰" if normalized_direction == 'income' else "💸"
+                sign = "+" if normalized_direction == 'income' else "-"
+                
+                context += f"  {emoji} {tx['transaction_date']} | {tx['category']} | {sign}{tx['amount']:,.2f} ₽"
+                
+                if tx.get('description'):
+                    context += f" | {tx['description']}"
+                
+                context += "\n"
         
         return context
     
-    def ask(self, question: str, client_id: Optional[int] = None) -> Dict:
+    def ask(self, question: str, client_id: Optional[str] = None) -> Dict:
         """
-        Задать вопрос AI ассистенту
+        Задать вопрос AI
         
         Args:
-            question: вопрос пользователя
+            question: Вопрос пользователя
             client_id: ID клиента (опционально)
             
         Returns:
-            dict: ответ AI с метаданными
+            dict: Результат от AI
         """
         try:
             # Строим контекст
-            context = self._build_context(client_id)
+            context = self.build_context(client_id)
             
-            # Формируем сообщения для API
+            # Формируем сообщения
             messages = [
                 {"role": "system", "content": self.system_prompt}
             ]
             
-            # Если есть контекст, добавляем его
+            # Добавляем контекст через API
             if context:
                 messages.append({
                     "role": "user",
-                    "content": f"Контекст клиента:\n{context}"
+                    "content": f"Контекст:\n{context}"
                 })
                 messages.append({
                     "role": "assistant",
-                    "content": "✅ Данные получены и проанализированы. Готов отвечать на вопросы!"
+                    "content": "Понял. Готов ответить на вопросы по этому клиенту!"
                 })
             
             # Добавляем вопрос пользователя
@@ -133,7 +148,7 @@ class AIService:
                 "content": question
             })
             
-            # Подготовка запроса к API
+            # Готовим запрос
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
@@ -146,7 +161,7 @@ class AIService:
                 "temperature": Config.AI_TEMPERATURE
             }
             
-            # Отправляем запрос
+            # Отправляем запрос в API
             response = requests.post(
                 self.api_url,
                 headers=headers,
@@ -154,7 +169,7 @@ class AIService:
                 timeout=Config.AI_TIMEOUT
             )
             
-            # Проверяем ответ
+            # Обрабатываем ответ
             if response.status_code == 200:
                 result = response.json()
                 answer = result['choices'][0]['message']['content']
@@ -164,14 +179,14 @@ class AIService:
                     'answer': answer,
                     'model': self.model,
                     'has_context': bool(context),
-                    'context_summary': self._get_context_summary(client_id) if client_id else None
+                    'context_summary': self.get_context_summary(client_id) if client_id else None
                 }
             else:
-                error_msg = f"AI API вернул ошибку: {response.status_code}"
+                error_msg = f"AI API ошибка: {response.status_code}"
                 if response.text:
                     try:
                         error_data = response.json()
-                        error_msg += f" - {error_data.get('error', {}).get('message', '')}"
+                        error_msg = f"{error_msg} - {error_data.get('error', {}).get('message', '')}"
                     except:
                         pass
                 
@@ -180,24 +195,24 @@ class AIService:
                     'error': error_msg,
                     'status_code': response.status_code
                 }
-        
+                
         except requests.exceptions.Timeout:
             return {
                 'success': False,
-                'error': 'Превышено время ожидания ответа от AI (30 сек)'
+                'error': 'AI сервис не отвечает (таймаут 30 сек)'
             }
         except requests.exceptions.RequestException as e:
             return {
                 'success': False,
-                'error': f'Ошибка сети: {str(e)}'
+                'error': f'Ошибка подключения к AI: {str(e)}'
             }
         except Exception as e:
             return {
                 'success': False,
-                'error': f'Неожиданная ошибка: {str(e)}'
+                'error': f'Непредвиденная ошибка: {str(e)}'
             }
     
-    def _get_context_summary(self, client_id: int) -> Dict:
+    def get_context_summary(self, client_id: str) -> Dict:
         """
         Получить краткую сводку контекста
         
@@ -205,7 +220,7 @@ class AIService:
             client_id: ID клиента
             
         Returns:
-            dict: краткая сводка
+            dict: Краткая сводка
         """
         client = ClientRepository.get_by_id(client_id)
         summary = TransactionRepository.get_summary(client_id)
@@ -216,41 +231,40 @@ class AIService:
             'balance': summary['balance']
         }
     
-    def get_suggested_questions(self, client_id: Optional[int] = None) -> List[str]:
+    def get_suggested_questions(self, client_id: Optional[str] = None) -> List[str]:
         """
-        Получить предложенные вопросы для клиента
+        Получить предложенные вопросы
         
         Args:
-            client_id: ID клиента
+            client_id: ID клиента (опционально)
             
         Returns:
-            list: список предложенных вопросов
+            list: Список предложенных вопросов
         """
         if client_id:
             summary = TransactionRepository.get_summary(client_id)
             
             questions = [
-                "📊 Проанализируй мои расходы за последний период",
-                "💡 Дай рекомендации по оптимизации бюджета",
-                "📈 Какие категории расходов самые большие?",
-                "💰 Как я могу увеличить свои сбережения?",
+                "Проанализируй расходы клиента",
+                "Какие основные категории доходов?",
+                "Есть ли необычные транзакции?",
+                "Дай рекомендации по оптимизации расходов"
             ]
             
             if summary['transaction_count'] > 10:
-                questions.append("📉 Найди паттерны в моих тратах")
+                questions.append("Покажи динамику транзакций")
             
             if summary['balance'] < 0:
-                questions.append("⚠️ У меня отрицательный баланс, что делать?")
+                questions.append("Почему баланс отрицательный?")
             
             return questions
         else:
             return [
-                "❓ Как работает эта CRM система?",
-                "📊 Покажи общую статистику",
-                "💡 Какие возможности у AI ассистента?",
-                "🔍 Как добавить нового клиента?"
+                "Сколько всего клиентов в CRM?",
+                "Какая общая статистика по доходам?",
+                "Покажи топ клиентов по обороту",
+                "Как работает AI ассистент?"
             ]
 
-
-# Создаем единственный экземпляр сервиса
+# Глобальный экземпляр
 ai_service = AIService()

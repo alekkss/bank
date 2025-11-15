@@ -1,13 +1,13 @@
 # app.py
+
 """
 Flask REST API для AI CRM системы
 Endpoints для работы с клиентами, транзакциями и AI
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from typing import Optional
-
 from config import Config
 from repositories import (
     ClientRepository,
@@ -16,10 +16,15 @@ from repositories import (
 )
 from ai_service import ai_service
 
-
 app = Flask(__name__)
 CORS(app)  # Разрешаем кросс-доменные запросы
 
+# ============ MAIN PAGE ============
+
+@app.route('/')
+def index():
+    """Главная страница"""
+    return render_template('index.html')
 
 # ============ CLIENTS ENDPOINTS ============
 
@@ -30,11 +35,9 @@ def get_clients():
         print("📥 Запрос списка клиентов")
         status = request.args.get('status')
         print(f"🔍 Фильтр статуса: {status}")
-        
         clients = ClientRepository.get_all(status=status)
         print(f"✅ Загружено клиентов: {len(clients)}")
         print(f"📊 Первые 3 клиента: {clients[:3] if clients else 'Нет данных'}")
-        
         return jsonify({'clients': clients}), 200
     except Exception as e:
         print(f"❌ ОШИБКА в get_clients: {str(e)}")
@@ -42,8 +45,7 @@ def get_clients():
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
-
-@app.route('/api/clients/<client_id>', methods=['GET'])
+@app.route('/api/clients/<string:client_id>', methods=['GET'])
 def get_client_details(client_id):
     """Получить детальную информацию о клиенте"""
     try:
@@ -78,13 +80,11 @@ def get_client_details(client_id):
             'conversations': conversations,
             'categories': categories
         }), 200
-        
     except Exception as e:
         print(f"❌ Ошибка получения клиента: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/clients', methods=['POST'])
 def create_client():
@@ -107,12 +107,10 @@ def create_client():
             'id': client_id,
             'message': 'Клиент успешно создан'
         }), 201
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-@app.route('/api/clients/<int:client_id>', methods=['PUT'])
+@app.route('/api/clients/<string:client_id>', methods=['PUT'])
 def update_client(client_id):
     """Обновить данные клиента"""
     try:
@@ -130,12 +128,10 @@ def update_client(client_id):
             return jsonify({'error': 'Клиент не найден'}), 404
         
         return jsonify({'message': 'Клиент успешно обновлен'}), 200
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-@app.route('/api/clients/<int:client_id>', methods=['DELETE'])
+@app.route('/api/clients/<string:client_id>', methods=['DELETE'])
 def delete_client(client_id):
     """Удалить клиента"""
     try:
@@ -145,10 +141,8 @@ def delete_client(client_id):
             return jsonify({'error': 'Клиент не найден'}), 404
         
         return jsonify({'message': 'Клиент успешно удален'}), 200
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 # ============ TRANSACTIONS ENDPOINTS ============
 
@@ -161,8 +155,10 @@ def create_transaction():
         # Валидация
         if not data.get('client_id'):
             return jsonify({'error': 'ID клиента обязателен'}), 400
+        
         if not data.get('amount'):
             return jsonify({'error': 'Сумма обязательна'}), 400
+        
         if not data.get('direction') or data['direction'] not in ['income', 'expense']:
             return jsonify({'error': 'Направление должно быть income или expense'}), 400
         
@@ -179,12 +175,10 @@ def create_transaction():
             'id': transaction_id,
             'message': 'Транзакция успешно создана'
         }), 201
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
-@app.route('/api/clients/<int:client_id>/transactions', methods=['GET'])
+@app.route('/api/clients/<string:client_id>/transactions', methods=['GET'])
 def get_client_transactions(client_id):
     """Получить транзакции клиента"""
     try:
@@ -194,7 +188,6 @@ def get_client_transactions(client_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
 # ============ AI ENDPOINTS ============
 
 @app.route('/api/ai/ask', methods=['POST'])
@@ -202,8 +195,8 @@ def ai_ask():
     """Задать вопрос AI ассистенту"""
     try:
         data = request.json
-        
         question = data.get('question')
+        
         if not question:
             return jsonify({'error': 'Вопрос не указан'}), 400
         
@@ -230,27 +223,24 @@ def ai_ask():
             'model': result['model'],
             'has_context': result['has_context']
         }), 200
-        
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/ai/suggestions', methods=['GET'])
 def ai_suggestions():
     """Получить предложенные вопросы"""
     try:
-        client_id = request.args.get('client_id', type=int)
+        client_id = request.args.get('client_id', type=str)
         suggestions = ai_service.get_suggested_questions(client_id=client_id)
         return jsonify({'suggestions': suggestions}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-
 @app.route('/api/ai/conversations', methods=['GET'])
 def get_conversations():
     """Получить историю AI диалогов"""
     try:
-        client_id = request.args.get('client_id', type=int)
+        client_id = request.args.get('client_id', type=str)
         limit = request.args.get('limit', default=20, type=int)
         
         if client_id:
@@ -261,7 +251,6 @@ def get_conversations():
         return jsonify({'conversations': conversations}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
-
 
 # ============ STATISTICS ENDPOINTS ============
 
@@ -311,13 +300,11 @@ def get_stats():
                 'balance': total_income - total_expense
             }
         }), 200
-        
     except Exception as e:
         print(f"❌ ОШИБКА в get_stats: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
-
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -328,7 +315,6 @@ def health_check():
         'version': '1.0.0'
     }), 200
 
-
 # ============ ERROR HANDLERS ============
 
 @app.errorhandler(404)
@@ -336,12 +322,10 @@ def not_found(error):
     """Обработчик 404 ошибки"""
     return jsonify({'error': 'Endpoint не найден'}), 404
 
-
 @app.errorhandler(500)
 def internal_error(error):
     """Обработчик 500 ошибки"""
     return jsonify({'error': 'Внутренняя ошибка сервера'}), 500
-
 
 # ============ MAIN ============
 
