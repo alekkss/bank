@@ -1,27 +1,32 @@
 # config.py
 """
 Конфигурация AI CRM системы
-Хранит все настройки приложения
+Загружает настройки из переменных окружения
 """
+import os
+from dotenv import load_dotenv
+
+# Загружаем переменные из .env файла
+load_dotenv()
 
 class Config:
     """Основные настройки приложения"""
     
     # База данных
-    DATABASE_FILE = "multibank_real.db"
+    DATABASE_FILE = os.getenv('DATABASE_FILE', 'multibank_real.db')
     
     # Flask настройки
-    FLASK_HOST = '0.0.0.0'
-    FLASK_PORT = 5000
-    FLASK_DEBUG = True
+    FLASK_HOST = os.getenv('FLASK_HOST', '0.0.0.0')
+    FLASK_PORT = int(os.getenv('FLASK_PORT', 5000))
+    FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
     
     # AI настройки
-    AI_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-    AI_API_KEY = "api-key openrouter"
-    AI_MODEL = "google/gemini-2.5-flash-lite"
-    AI_MAX_TOKENS = 2048
-    AI_TEMPERATURE = 0.7
-    AI_TIMEOUT = 30
+    AI_API_URL = os.getenv('AI_API_URL', 'https://openrouter.ai/api/v1/chat/completions')
+    AI_API_KEY = os.getenv('AI_API_KEY')
+    AI_MODEL = os.getenv('AI_MODEL', 'google/gemini-2.5-flash-lite')
+    AI_MAX_TOKENS = int(os.getenv('AI_MAX_TOKENS', 2048))
+    AI_TEMPERATURE = float(os.getenv('AI_TEMPERATURE', 0.7))
+    AI_TIMEOUT = int(os.getenv('AI_TIMEOUT', 30))
     
     # Системный промпт для AI
     AI_SYSTEM_PROMPT = """Ты профессиональный финансовый консультант и CRM-ассистент.
@@ -41,7 +46,7 @@ class Config:
 - Используй эмодзи для наглядности
 - Структурируй ответ по пунктам
 - Заканчивай практическими рекомендациями"""
-
+    
     # Категории транзакций (для будущего расширения)
     TRANSACTION_CATEGORIES = [
         '💼 Зарплата',
