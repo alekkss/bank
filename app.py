@@ -1,13 +1,12 @@
 # app.py
-
 """
 Flask REST API для AI CRM системы
 Endpoints для работы с клиентами, транзакциями и AI
 """
-
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 from flask_cors import CORS
 from typing import Optional
+from functools import wraps
 from config import Config
 from repositories import (
     ClientRepository,
@@ -15,37 +14,155 @@ from repositories import (
     AIConversationRepository
 )
 from ai_service import ai_service
+import bcrypt
 
 app = Flask(__name__)
-CORS(app)  # Разрешаем кросс-доменные запросы
+app.secret_key = Config.SECRET_KEY  # Для работы сессий
+CORS(app)
+
+# Настройки сессий
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['PERMANENT_SESSION_LIFETIME'] = 86400  # 24 часа
+
+
+# ============ AUTHENTICATION ============
+
+def login_required(f):
+    """Декоратор для проверки авторизации"""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('authenticated'):
+            return jsonify({'error': 'Требуется авторизация', 'redirect': '/login'}), 401
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.route('/login')
+def login_page():
+    """Страница авторизации"""
+    if session.get('authenticated'):
+        return redirect(url_for('index'))
+    return render_template('login.html')
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """API авторизации с bcrypt хешированием"""
+    try:
+        data = request.json
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+        
+        # Валидация входных данных
+        if not username or not password:
+            return jsonify({
+                'success': False,
+                'message': 'Логин и пароль обязательны'
+            }), 400
+        
+        # Получаем данные из config
+        correct_username = Config.AUTH_USERNAME
+        password_hash = Config.AUTH_PASSWORD_HASH
+        
+        # Проверяем username
+        if username != correct_username:
+            return jsonify({
+                'success': False,
+                'message': 'Неверный логин или пароль'
+            }), 401
+        
+        # Проверяем пароль через bcrypt
+        if not password_hash:
+            # Для обратной совместимости (если хеш не настроен)
+            return jsonify({
+                'success': False,
+                'message': 'Система авторизации не настроена'
+            }), 500
+        
+        # Сравниваем введённый пароль с хешем
+        if bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8')):
+            session['authenticated'] = True
+            session.permanent = True
+            return jsonify({
+                'success': True,
+                'message': 'Авторизация успешна'
+            }), 200
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Неверный логин или пароль'
+            }), 401
+            
+    except Exception as e:
+        print(f"❌ Ошибка авторизации: {str(e)}")
+        return jsonify({
+            'success': False,
+            'message': 'Ошибка сервера при авторизации'
+        }), 500
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def logout():
+    """Выход из системы"""
+    session.clear()
+    return jsonify({'success': True, 'message': 'Вы вышли из системы'}), 200
+
+
+@app.route('/api/auth/check', methods=['GET'])
+def check_auth():
+    """Проверка статуса авторизации"""
+    return jsonify({
+        'authenticated': session.get('authenticated', False)
+    }), 200
+
 
 # ============ MAIN PAGE ============
 
 @app.route('/')
 def index():
     """Главная страница"""
+    if not session.get('authenticated'):
+        return redirect(url_for('login_page'))
     return render_template('index.html')
 
 # ============ CLIENTS ENDPOINTS ============
 
 @app.route('/api/clients', methods=['GET'])
+@login_required
 def get_clients():
-    """Получить список всех клиентов"""
     try:
-        print("📥 Запрос списка клиентов")
+        print("Получение списка клиентов...")
         status = request.args.get('status')
-        print(f"🔍 Фильтр статуса: {status}")
+        print(f"Фильтр по статусу: {status}")
+        
         clients = ClientRepository.get_all(status=status)
-        print(f"✅ Загружено клиентов: {len(clients)}")
-        print(f"📊 Первые 3 клиента: {clients[:3] if clients else 'Нет данных'}")
-        return jsonify({'clients': clients}), 200
+        print(f"Найдено клиентов: {len(clients)}")
+        print(f"Первые 3 клиента: {clients[:3] if clients else []}")
+        
+        # Добавляем баланс для каждого клиента
+        for client in clients:
+            try:
+                summary = TransactionRepository.get_summary(client['id'])
+                client['balance'] = summary['balance']
+                
+                # Добавляем рейтинг
+                rating = TransactionRepository.calculate_client_rating(client['id'])
+                client['rating'] = rating
+            except Exception as e:
+                print(f"Ошибка при получении данных для клиента {client['id']}: {e}")
+                client['balance'] = 0
+                client['rating'] = 3.0
+        
+        return jsonify(clients=clients), 200
     except Exception as e:
-        print(f"❌ ОШИБКА в get_clients: {str(e)}")
+        print(f"Ошибка в get_clients: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify(error=str(e)), 500
 
 @app.route('/api/clients/<string:client_id>', methods=['GET'])
+@login_required
 def get_client_details(client_id):
     """Получить детальную информацию о клиенте"""
     try:
@@ -87,6 +204,7 @@ def get_client_details(client_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/clients', methods=['POST'])
+@login_required
 def create_client():
     """Создать нового клиента"""
     try:
@@ -111,6 +229,7 @@ def create_client():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/clients/<string:client_id>', methods=['PUT'])
+@login_required
 def update_client(client_id):
     """Обновить данные клиента"""
     try:
@@ -132,6 +251,7 @@ def update_client(client_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/clients/<string:client_id>', methods=['DELETE'])
+@login_required
 def delete_client(client_id):
     """Удалить клиента"""
     try:
@@ -147,6 +267,7 @@ def delete_client(client_id):
 # ============ TRANSACTIONS ENDPOINTS ============
 
 @app.route('/api/transactions', methods=['POST'])
+@login_required
 def create_transaction():
     """Создать новую транзакцию"""
     try:
@@ -179,6 +300,7 @@ def create_transaction():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/clients/<string:client_id>/transactions', methods=['GET'])
+@login_required
 def get_client_transactions(client_id):
     """Получить транзакции клиента"""
     try:
@@ -191,6 +313,7 @@ def get_client_transactions(client_id):
 # ============ AI ENDPOINTS ============
 
 @app.route('/api/ai/ask', methods=['POST'])
+@login_required
 def ai_ask():
     """Задать вопрос AI ассистенту"""
     try:
@@ -227,6 +350,7 @@ def ai_ask():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/ai/suggestions', methods=['GET'])
+@login_required
 def ai_suggestions():
     """Получить предложенные вопросы"""
     try:
@@ -237,6 +361,7 @@ def ai_suggestions():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/ai/conversations', methods=['GET'])
+@login_required
 def get_conversations():
     """Получить историю AI диалогов"""
     try:
@@ -255,6 +380,7 @@ def get_conversations():
 # ============ STATISTICS ENDPOINTS ============
 
 @app.route('/api/stats', methods=['GET'])
+@login_required
 def get_stats():
     """Получить общую статистику системы"""
     try:

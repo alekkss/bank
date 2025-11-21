@@ -2,6 +2,7 @@
 base.py - Прямой импорт данных из банковских API в SQLite
 Объединяет функционал получения данных из API и создания БД
 БЕЗ промежуточного Excel файла
+С использованием существующих consent для vbank
 """
 
 import requests
@@ -10,7 +11,9 @@ import os
 import json
 import time
 from datetime import datetime
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class DirectAPIToSQLite:
     """Получение данных из API банков и прямая запись в SQLite"""
@@ -19,10 +22,11 @@ class DirectAPIToSQLite:
         self.db_file = db_file
         self.conn = None
         self.cursor = None
+
         
         # API credentials
-        self.client_id = "team047"
-        self.client_secret = "Zgvg9XMPMgVgB9SBXYyH0FLzeLxJkaRS"
+        self.client_id = os.getenv("CLIENT_ID")
+        self.client_secret = os.getenv("CLIENT_SECRET")
         
         # Банки
         self.banks = [
@@ -37,6 +41,20 @@ class DirectAPIToSQLite:
                 "url": "https://vbank.open.bankingapi.ru"
             }
         ]
+        
+        # Существующие consent ID для vbank (уже подтверждённые)
+        self.vbank_consents = {
+            "team047-1": "consent-ebf94ddb5ee9",
+            "team047-2": "consent-aa25ea42fc98",
+            "team047-3": "consent-de242a679be0",
+            "team047-4": "consent-43281571974e",
+            "team047-5": "consent-4ee785844d05",
+            "team047-6": "consent-574a4e96cf8d",
+            "team047-7": "consent-40bd0ca51d3b",
+            "team047-8": "consent-bdff43178ac6",
+            "team047-9": "consent-2a2931da1e8a",
+            "team047-10": "consent-c45178b64ae1"
+        }
         
         # Настройки повторов
         self.max_retries = 5
@@ -57,14 +75,20 @@ class DirectAPIToSQLite:
     # ==================== СОЗДАНИЕ БАЗЫ ДАННЫХ ====================
     
     def create_database(self):
-        """Создать БД со схемой"""
-        print("📊 Создание схемы БД...")
+        """Создать БД со схемой (если не существует) или переиспользовать существующую"""
         
-        # Удаляем старую БД
-        if os.path.exists(self.db_file):
-            os.remove(self.db_file)
-            print(f"  🗑️ Удалена старая БД: {self.db_file}")
+        db_exists = os.path.exists(self.db_file)
         
+        if db_exists:
+            print("📊 Подключение к существующей БД...")
+            print(f"  ℹ️  БД: {self.db_file}")
+            print(f"  🔄 Режим: Обновление данных")
+        else:
+            print("📊 Создание новой БД...")
+            print(f"  ✨ БД: {self.db_file}")
+            print(f"  🔄 Режим: Первичная инициализация")
+        
+        # Подключаемся к БД (создаст файл если не существует)
         self.conn = sqlite3.connect(self.db_file)
         self.cursor = self.conn.cursor()
         
@@ -123,7 +147,8 @@ class DirectAPIToSQLite:
                 currency TEXT,
                 date_time TIMESTAMP,
                 credit_debit_indicator TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(account_id, bank_code, balance_type)
             )
         ''')
         
@@ -166,7 +191,12 @@ class DirectAPIToSQLite:
         ''')
         
         self.conn.commit()
-        print("  ✓ БД схема создана\n")
+        
+        if db_exists:
+            print("  ✓ Подключено к существующей БД")
+            print("  💡 Новые данные будут добавлены/обновлены\n")
+        else:
+            print("  ✓ БД схема создана\n")
     
     
     # ==================== API МЕТОДЫ ====================
@@ -234,8 +264,20 @@ class DirectAPIToSQLite:
             return 0
     
     
-    def create_consent_with_retry(self, bank_url, token, client_id):
-        """Создать согласие с повторами"""
+    def create_consent_with_retry(self, bank_url, token, client_id, bank_code):
+        """Создать согласие или использовать существующее для vbank"""
+        
+        # Для vbank - используем существующий consent
+        if bank_code == 'vbank':
+            existing_consent = self.vbank_consents.get(client_id)
+            if existing_consent:
+                print(f"    ✓ Используем существующий consent: {existing_consent}")
+                return existing_consent
+            else:
+                print(f"    ⚠️ Нет consent для {client_id}")
+                return None
+        
+        # Для abank - создаём новый (автоматически)
         for attempt in range(self.max_retries):
             try:
                 payload = {
@@ -247,15 +289,16 @@ class DirectAPIToSQLite:
                         "ReadTransactionsBasic",
                         "ReadTransactionsDetail"
                     ],
-                    "reason": "Агрегация счетов",
-                    "requesting_bank": self.client_id,
-                    "requesting_bank_name": "team047 App"
+                    "reason": "",
+                    "requesting_bank": f"{bank_code}_bank",
+                    "requesting_bank_name": "Test Bank"
                 }
                 
                 headers = {
                     'Authorization': f'Bearer {token}',
                     'X-Requesting-Bank': self.client_id,
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'accept': 'application/json'
                 }
                 
                 response = requests.post(
@@ -269,11 +312,14 @@ class DirectAPIToSQLite:
                     data = response.json()
                     consent_id = data.get('consent_id') or data.get('consentId')
                     if consent_id:
+                        print(f"    ✓ Consent ID: {consent_id}")
                         return consent_id
                 
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay)
+                    
             except Exception as e:
+                print(f"    ⚠️ Ошибка создания согласия: {e}")
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay)
         
@@ -417,19 +463,22 @@ class DirectAPIToSQLite:
     
     
     def save_balance_to_db(self, balance, account_id, client_id, bank_code):
-        """Сохранить баланс в БД"""
+        """Сохранить баланс в БД (с заменой старых значений)"""
         try:
             amount_data = balance.get('amount', {})
+            balance_type = balance.get('type')
+            
+            # Используем INSERT OR REPLACE для обновления существующих записей
             self.cursor.execute('''
-                INSERT INTO balances
+                INSERT OR REPLACE INTO balances
                 (account_id, client_id, bank_code, balance_type, amount, currency,
-                 date_time, credit_debit_indicator)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                date_time, credit_debit_indicator, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             ''', (
                 account_id,
                 client_id,
                 bank_code,
-                balance.get('type'),
+                balance_type,
                 amount_data.get('amount'),
                 amount_data.get('currency'),
                 balance.get('dateTime'),
@@ -534,13 +583,12 @@ class DirectAPIToSQLite:
                 failed_clients.append(client_id)
                 continue
             
-            # Создаем согласие
-            consent_id = self.create_consent_with_retry(bank_url, token, client_id)
+            # Получаем consent (используем существующий для vbank)
+            consent_id = self.create_consent_with_retry(bank_url, token, client_id, bank_code)
             if not consent_id:
-                print(f"  ❌ Согласие не создано")
+                print(f"  ❌ Согласие не получено")
                 failed_clients.append(client_id)
                 continue
-            print(f"  ✓ Согласие получено")
             
             # Получаем счета
             accounts = self.get_accounts_with_retry(bank_url, token, client_id, consent_id)
@@ -601,8 +649,8 @@ class DirectAPIToSQLite:
 ╔═══════════════════════════════════════════════════════════════════╗
 ║ 📊 ПРЯМОЙ ИМПОРТ ИЗ API БАНКОВ В SQLITE                         ║
 ║                                                                   ║
-║ • Awesome Bank (abank) - 10 клиентов                            ║
-║ • Virtual Bank (vbank) - 10 клиентов                            ║
+║ • Awesome Bank (abank) - 10 клиентов (auto)                     ║
+║ • Virtual Bank (vbank) - 10 клиентов (existing consents)       ║
 ║                                                                   ║
 ║ БЕЗ промежуточного Excel файла                                   ║
 ╚═══════════════════════════════════════════════════════════════════╝

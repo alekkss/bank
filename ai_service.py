@@ -57,7 +57,7 @@ class AIService:
             return ""
         
         # Получаем транзакции и статистику
-        transactions = TransactionRepository.get_by_client(client_id, limit=50)
+        transactions = TransactionRepository.get_by_client(client_id, limit=100)
         summary = TransactionRepository.get_summary(client_id)
         categories = TransactionRepository.get_by_category(client_id)
         
@@ -96,7 +96,7 @@ class AIService:
         # Добавляем последние 10 транзакций
         if transactions:
             context += f"\nПоследние 10 транзакций:\n"
-            for tx in transactions[:10]:
+            for tx in transactions[:50]:
                 # Определяем направление
                 normalized_direction = self._normalize_direction(tx['direction'])
                 emoji = "💰" if normalized_direction == 'income' else "💸"
@@ -248,14 +248,10 @@ class AIService:
                 "Проанализируй расходы клиента",
                 "Какие основные категории доходов?",
                 "Есть ли необычные транзакции?",
-                "Дай рекомендации по оптимизации расходов"
+                "Дай рекомендации по оптимизации расходов",
+                "Сделай финансовый профиль клиента"
             ]
             
-            if summary['transaction_count'] > 10:
-                questions.append("Покажи динамику транзакций")
-            
-            if summary['balance'] < 0:
-                questions.append("Почему баланс отрицательный?")
             
             return questions
         else:

@@ -8,6 +8,7 @@
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from database import db_manager
+from config import Config
 
 
 class ClientRepository:
@@ -23,6 +24,41 @@ class ClientRepository:
         except Exception as e:
             print(f"❌ Ошибка _detect_structure: {e}")
             return 'crm'
+    
+    @staticmethod
+    def _assign_mock_contacts(clients: List[Dict]) -> List[Dict]:
+        """
+        Присваивает рандомные email и phone из .env клиентам
+        Если клиентов больше чем контактов - циклически повторяет контакты
+        """
+        mock_contacts = Config.get_mock_contacts()
+        
+        if not mock_contacts:
+            return clients
+        
+        # Создаем копию списка клиентов для модификации
+        clients_with_contacts = []
+        
+        for idx, client in enumerate(clients):
+            client_copy = dict(client)
+            
+            # Если email/phone уже есть и не null - пропускаем
+            has_email = client.get('email') and str(client.get('email')).lower() != 'null'
+            has_phone = client.get('phone') and str(client.get('phone')).lower() != 'null'
+            
+            if not has_email or not has_phone:
+                # Циклически выбираем контакт (если клиентов больше - повторяем)
+                contact_idx = idx % len(mock_contacts)
+                email, phone = mock_contacts[contact_idx]
+                
+                if not has_email:
+                    client_copy['email'] = email
+                if not has_phone:
+                    client_copy['phone'] = phone
+            
+            clients_with_contacts.append(client_copy)
+        
+        return clients_with_contacts
     
     @staticmethod
     def get_all(status: Optional[str] = None) -> List[Dict]:
@@ -46,13 +82,19 @@ class ClientRepository:
                 GROUP BY c.client_id, c.bank_code
                 ORDER BY c.bank_code, c.client_id
             '''
-            return db_manager.execute_query(query)
+            clients = db_manager.execute_query(query)
+            
+            # Добавляем мок-контакты
+            clients = ClientRepository._assign_mock_contacts(clients)
+            
+            return clients
+            
         else:
             # CRM структура
             if status:
                 query = '''
                     SELECT id, name, email, phone, status, created_at, updated_at
-                    FROM clients
+                    FROM clients 
                     WHERE status = ?
                     ORDER BY id DESC
                 '''
@@ -60,7 +102,7 @@ class ClientRepository:
             else:
                 query = '''
                     SELECT id, name, email, phone, status, created_at, updated_at
-                    FROM clients
+                    FROM clients 
                     ORDER BY id DESC
                 '''
                 return db_manager.execute_query(query)
@@ -117,10 +159,15 @@ class ClientRepository:
                     LIMIT 1
                 '''
                 results = db_manager.execute_query(query, (client_id_part,))
+            
+            # Добавляем мок-контакты для одного клиента
+            if results:
+                results = ClientRepository._assign_mock_contacts(results)
+                
         else:
             query = '''
                 SELECT id, name, email, phone, status, created_at, updated_at
-                FROM clients
+                FROM clients 
                 WHERE id = ?
             '''
             results = db_manager.execute_query(query, (str(client_id),))
@@ -129,21 +176,38 @@ class ClientRepository:
     
     @staticmethod
     def create(name: str, email: str = None, phone: str = None, 
-               status: str = 'active') -> int:
-        """Создать нового клиента (только для CRM структуры)"""
+           status: str = 'active') -> str:
+        """
+        Создать нового клиента
+        В банковском режиме создаём "обычного" клиента с id = uuid, без bank_code
+        """
         structure = ClientRepository._detect_structure()
         
         if structure == 'banking':
-            raise Exception("Используйте банковский API для создания клиентов")
+            # Создаём клиента как в обычной CRM — просто без bank_code
+            query = '''
+                INSERT INTO clients (client_id, bank_code, created_at)
+                VALUES (?, ?, datetime('now'))
+            '''
+            # Генерируем простой UUID-подобный id
+            import uuid
+            new_id = str(uuid.uuid4())[:8]
+            db_manager.execute_update(query, (new_id, 'MANUAL'))
+            
+            # Возвращаем составной id в формате, который понимает фронтенд
+            return f"{new_id}-MANUAL"
         
-        query = '''
-            INSERT INTO clients (name, email, phone, status)
-            VALUES (?, ?, ?, ?)
-        '''
-        return db_manager.execute_update(query, (name, email, phone, status))
+        else:
+            # Обычная CRM логика
+            query = '''
+                INSERT INTO clients (name, email, phone, status)
+                VALUES (?, ?, ?, ?)
+            '''
+            client_id = db_manager.execute_update(query, (name, email, phone, status))
+            return str(client_id)
     
     @staticmethod
-    def update(client_id: int, name: str = None, email: str = None, 
+    def update(client_id: int, name: str = None, email: str = None,
                phone: str = None, status: str = None) -> int:
         """Обновить данные клиента (только для CRM)"""
         structure = ClientRepository._detect_structure()
@@ -157,12 +221,15 @@ class ClientRepository:
         if name is not None:
             updates.append('name = ?')
             params.append(name)
+        
         if email is not None:
             updates.append('email = ?')
             params.append(email)
+        
         if phone is not None:
             updates.append('phone = ?')
             params.append(phone)
+        
         if status is not None:
             updates.append('status = ?')
             params.append(status)
@@ -174,7 +241,7 @@ class ClientRepository:
         params.append(client_id)
         
         query = f'''
-            UPDATE clients
+            UPDATE clients 
             SET {', '.join(updates)}
             WHERE id = ?
         '''
@@ -208,6 +275,7 @@ class ClientRepository:
             else:
                 query = 'SELECT COUNT(*) as count FROM clients'
                 result = db_manager.execute_query(query)
+            
             return result[0]['count'] if result else 0
 
 
@@ -464,6 +532,75 @@ class TransactionRepository:
                 ORDER BY total DESC
             '''
             return db_manager.execute_query(query, (str(client_id),))
+    @staticmethod
+    def get_average_balance() -> float:
+        """Получить средний баланс всех клиентов"""
+        try:
+            clients = ClientRepository.get_all()
+            if not clients:
+                return 0.0
+            
+            balances = []
+            for client in clients:
+                summary = TransactionRepository.get_summary(client['id'])
+                balances.append(summary['balance'])
+            
+            avg = sum(balances) / len(balances) if balances else 0.0
+            return avg
+        except Exception as e:
+            print(f"❌ Ошибка get_average_balance: {e}")
+            return 0.0
+
+    @staticmethod
+    def calculate_client_rating(client_id: str) -> float:
+        """
+        Расчет рейтинга клиента (формула на квадратном корне для более мягкого распределения)
+        Рейтинг от 1.0 до 5.0 на основе баланса относительно других клиентов
+        """
+        import math
+        
+        try:
+            # Получаем баланс клиента
+            summary = TransactionRepository.get_summary(client_id)
+            client_balance = summary['balance']
+            
+            # Получаем балансы всех клиентов
+            clients = ClientRepository.get_all()
+            if not clients or len(clients) == 0:
+                return 3.0
+            
+            balances = []
+            for client in clients:
+                client_summary = TransactionRepository.get_summary(client['id'])
+                balances.append(client_summary['balance'])
+            
+            if not balances:
+                return 3.0
+            
+            max_balance = max(balances)
+            avg_balance = sum(balances) / len(balances)
+            
+            # Защита от деления на ноль
+            if max_balance <= 0 or avg_balance <= 0:
+                return 3.0
+            
+            # Формула на квадратном корне для более мягкого распределения
+            ratio = math.sqrt(max(0, client_balance) / avg_balance)
+            max_ratio = math.sqrt(max_balance / avg_balance)
+            
+            if max_ratio == 0:
+                return 3.0
+            
+            rating = 1 + 4 * (ratio / max_ratio)
+            
+            # Ограничиваем от 1.0 до 5.0
+            rating = max(1.0, min(5.0, rating))
+            
+            return round(rating, 1)
+        except Exception as e:
+            print(f"❌ Ошибка calculate_client_rating для {client_id}: {e}")
+            return 3.0
+
 
 
 class AIConversationRepository:
