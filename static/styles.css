@@ -114,6 +114,33 @@ h1 {
     gap: 8px;
 }
 
+/* ============ КНОПКА ВЫХОДА ============ */
+.btn-logout {
+    background: #ef4444;
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    transition: var(--transition);
+    box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-logout:hover {
+    background: #dc2626;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6);
+}
+
+.btn-logout:active {
+    transform: translateY(0);
+}
+
 .btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
@@ -223,7 +250,7 @@ h1 {
 /* ============ ОСНОВНОЙ КОНТЕНТ ============ */
 .main-content {
     display: grid;
-    grid-template-columns: 1fr 450px;
+    grid-template-columns: 1fr 750px;
     gap: 30px;
     animation: fadeIn 0.5s ease 0.4s both;
 }
@@ -289,15 +316,60 @@ h1 {
     margin-bottom: 20px;
 }
 
-.client-card {
-    background: var(--bg-light);
-    padding: 20px;
+client-card {
+    background: var(--bg-card);
     border-radius: var(--border-radius);
+    padding: 16px;
     margin-bottom: 12px;
     cursor: pointer;
     transition: var(--transition);
-    border-left: 4px solid var(--primary-color);
-    animation: slideIn 0.3s ease;
+    border: 2px solid transparent;
+    box-shadow: var(--shadow-sm);
+}
+
+.client-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    /* margin-bottom: 12px; */
+}
+
+.client-info-left {
+    flex: 1;
+    min-width: 0; /* Для правильного переноса длинных строк */
+}
+
+.client-balance {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 100px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.02);
+    margin-left: 12px;
+}
+
+.balance-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.balance-value {
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.balance-positive .balance-value {
+    color: var(--success-color);
+}
+
+.balance-negative .balance-value {
+    color: var(--danger-color);
 }
 
 @keyframes slideIn {
@@ -323,43 +395,59 @@ h1 {
 }
 
 .client-name {
-    font-size: 18px;
     font-weight: 600;
     color: var(--text-primary);
-    margin-bottom: 8px;
+    font-size: 16px;
+    margin-bottom: 6px;
 }
 
 .client-info {
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-secondary);
     margin-bottom: 4px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .client-status {
     display: inline-block;
     padding: 4px 12px;
-    border-radius: 20px;
+    border-radius: 12px;
     font-size: 12px;
-    font-weight: 600;
-    margin-top: 8px;
+    font-weight: 500;
 }
 
-.client-status.active {
-    background: #c6f6d5;
-    color: #22543d;
+.client-status-active {
+    background: rgba(72, 187, 120, 0.15);
+    color: var(--success-color);
 }
 
-.client-status.inactive {
-    background: #fed7d7;
-    color: #742a2a;
+.client-status-inactive {
+    background: rgba(160, 174, 192, 0.15);
+    color: var(--text-secondary);
 }
 
-.client-status.vip {
-    background: #fef5e7;
-    color: #975a16;
+.client-status-vip {
+    background: rgba(237, 137, 54, 0.15);
+    color: var(--warning-color);
+}
+
+.client-status-blocked {
+    background: rgba(245, 101, 101, 0.15);
+    color: var(--danger-color);
+}
+
+.client-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--primary-color);
+}
+
+.client-card.selected {
+    border-color: var(--primary-color);
+    box-shadow: var(--shadow-lg);
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
 }
 
 /* ============ ДЕТАЛИ КЛИЕНТА ============ */
@@ -844,3 +932,375 @@ textarea:focus {
 .message.assistant p {
     margin: 8px 0;
 }
+
+/* Обертка для статуса с индикатором */
+.client-status-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Цветной индикатор (точка) для статуса */
+.status-indicator {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.status-indicator-active {
+    background: var(--success-color);
+    box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.2);
+}
+
+.status-indicator-inactive {
+    background: var(--text-secondary);
+    box-shadow: 0 0 0 2px rgba(160, 174, 192, 0.2);
+}
+
+.status-indicator-vip {
+    background: var(--warning-color);
+    box-shadow: 0 0 0 2px rgba(237, 137, 54, 0.2);
+    animation: pulse-vip 2s ease-in-out infinite;
+}
+
+.status-indicator-blocked {
+    background: var(--danger-color);
+    box-shadow: 0 0 0 2px rgba(245, 101, 101, 0.2);
+}
+
+/* Анимация пульсации для VIP статуса */
+@keyframes pulse-vip {
+    0%, 100% {
+        box-shadow: 0 0 0 2px rgba(237, 137, 54, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 0 4px rgba(237, 137, 54, 0.4);
+    }
+}
+
+/* Рейтинг клиента */
+.client-rating {
+    display: flex;
+    align-items: center;
+    justify-content: end;
+    gap: 6px;
+    /* margin-top: 8px; */
+    /* padding-top: 8px; */
+    font-size: 13px;
+}
+
+.rating-stars {
+    color: #fbbf24;
+    font-size: 14px;
+    letter-spacing: 1px;
+    line-height: 1;
+}
+
+.rating-value {
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.client-rating:hover .rating-stars {
+    transform: scale(1.05);
+    transition: transform 0.2s ease;
+}
+
+/* ============ РАСШИРЕННАЯ АДАПТИВНОСТЬ ДЛЯ МОБИЛЬНЫХ ============ */
+
+@media (max-width: 768px) {
+    /* Основные контейнеры */
+    body {
+        padding: 12px;
+    }
+    
+    header {
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+    }
+    header > div:last-child {
+        display: flex;
+        gap: 8px;
+        width: 100%;
+    }
+    
+    h1 {
+        font-size: 22px;
+    }
+    .btn-logout,
+    header .btn {
+        padding: 8px 14px;
+        font-size: 13px;
+        flex: 1;
+    }
+    
+    /* Статистика в одну колонку */
+    .stats-container {
+        grid-template-columns: 1fr !important;
+        gap: 12px;
+    }
+    
+    .stat-card {
+        padding: 16px;
+    }
+    
+    /* Панели */
+    .clients-panel,
+    .ai-panel {
+        padding: 16px;
+    }
+    
+    /* Финансовая сводка в колонку */
+    .financial-summary {
+        grid-template-columns: 1fr !important;
+        gap: 12px;
+    }
+    
+    /* Фильтры */
+    .filter-buttons {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .filter-btn {
+        flex: 1;
+        min-width: 100px;
+    }
+    
+    /* Карточка клиента */
+    .client-card {
+        padding: 12px;
+    }
+    
+    .client-header {
+        flex-direction: column;
+        gap: 12px;
+        align-items: flex-start;
+    }
+    
+    .client-balance {
+        width: 100%;
+        margin-left: 0;
+        margin-top: 8px;
+        align-items: flex-start;
+    }
+    
+    .balance-value {
+        font-size: 18px;
+    }
+    
+    .client-rating {
+        justify-content: flex-start;
+        margin-top: 8px;
+        padding-top: 8px;
+        border-top: 1px solid var(--border-color);
+    }
+    
+    /* Модальные окна */
+    .modal-content {
+        padding: 20px;
+        width: 95%;
+    }
+    
+    .modal-header h3 {
+        font-size: 20px;
+    }
+    
+    /* AI панель */
+    .ai-panel {
+        height: 600px;
+    }
+    
+    .ai-chat {
+        padding: 12px;
+    }
+    
+    .message {
+        max-width: 95%;
+        padding: 12px;
+        font-size: 14px;
+    }
+    
+    /* Транзакции */
+    .transaction-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+    
+    .transaction-amount {
+        align-self: flex-end;
+    }
+    
+    /* Кнопки */
+    .btn {
+        padding: 10px 16px;
+        font-size: 13px;
+    }
+}
+
+/* Очень маленькие экраны (телефоны) */
+@media (max-width: 480px) {
+    body {
+        padding: 8px;
+    }
+    
+    header {
+        padding: 12px;
+    }
+    .btn-logout,
+    header .btn {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+    
+    h1 {
+        font-size: 18px;
+    }
+    
+    .logo-icon {
+        font-size: 24px;
+    }
+    
+    /* Статистика компактнее */
+    .stat-card {
+        padding: 12px;
+        gap: 12px;
+    }
+    
+    .stat-icon {
+        font-size: 32px;
+        width: 48px;
+        height: 48px;
+    }
+    
+    .stat-value {
+        font-size: 20px;
+    }
+    
+    .stat-label {
+        font-size: 11px;
+    }
+    
+    /* Клиенты */
+    .clients-panel,
+    .ai-panel {
+        padding: 12px;
+    }
+    
+    .panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    
+    .panel-header h2 {
+        font-size: 16px;
+    }
+    
+    .client-card {
+        padding: 10px;
+    }
+    
+    .client-name {
+        font-size: 14px;
+    }
+    
+    .client-info {
+        font-size: 12px;
+    }
+    
+    .balance-label {
+        font-size: 10px;
+    }
+    
+    .balance-value {
+        font-size: 16px;
+    }
+    
+    /* Рейтинг */
+    .client-rating {
+        margin-top: 6px;
+        padding-top: 6px;
+        gap: 4px;
+    }
+    
+    .rating-stars {
+        font-size: 12px;
+    }
+    
+    .rating-value {
+        font-size: 11px;
+    }
+    
+    /* Фильтры мелкие */
+    .filter-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+        min-width: 80px;
+    }
+    
+    /* Транзакции */
+    .transaction-item {
+        padding: 12px;
+    }
+    
+    .transaction-category {
+        font-size: 14px;
+    }
+    
+    .transaction-amount {
+        font-size: 14px;
+    }
+    
+    /* AI чат */
+    .ai-input {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    textarea {
+        min-height: 80px;
+    }
+    
+    .btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Модальные окна */
+    .modal-content {
+        padding: 16px;
+        width: 95%;
+    }
+    
+    .form-group {
+        margin-bottom: 16px;
+    }
+    
+    .radio-group {
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .radio-label {
+        width: 100%;
+    }
+}
+
+/* Горизонтальная ориентация мобильных устройств */
+@media (max-width: 768px) and (orientation: landscape) {
+    .ai-panel {
+        height: 400px;
+    }
+    
+    .clients-list {
+        max-height: 300px;
+    }
+}
+

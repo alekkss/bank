@@ -1,5 +1,35 @@
 // app.js - Логика frontend приложения
 
+// Проверка авторизации при загрузке
+async function checkAuth() {
+    try {
+        const response = await fetchWithAuth('/api/auth/check');
+        const data = await response.json();
+        
+        if (!data.authenticated) {
+            window.location.href = '/login';
+        }
+    } catch (error) {
+        console.error('Ошибка проверки авторизации:', error);
+        window.location.href = '/login';
+    }
+}
+
+// Проверяем авторизацию сразу
+checkAuth();
+
+// Обработка 401 ошибок (сессия истекла)
+async function fetchWithAuth(url, options = {}) {
+    const response = await fetch(url, options);
+    
+    if (response.status === 401) {
+        window.location.href = '/login';
+        return null;
+    }
+    
+    return response;
+}
+
 // ============ КОНФИГУРАЦИЯ ============
 const API_URL = '/api';
 
@@ -89,6 +119,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ============ ОБРАБОТЧИКИ СОБЫТИЙ ============
 function setupEventListeners() {
+    // Кнопка выхода
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+            if (confirm('Вы уверены, что хотите выйти?')) {
+                try {
+                    await fetch('/api/auth/logout', { method: 'POST' });
+                    window.location.href = '/login';
+                } catch (error) {
+                    console.error('Ошибка выхода:', error);
+                    window.location.href = '/login';
+                }
+            }
+        });
+    }
+
     // Отправка вопроса по Ctrl+Enter
     document.getElementById('aiQuestion').addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && e.ctrlKey) {
@@ -96,6 +142,10 @@ function setupEventListeners() {
             askAI();
         }
     });
+    document.getElementById('saveClientBtn')?.addEventListener('click', async (e) => {
+        e.preventDefault();
+            await addClient(e);  // можно даже без event, если не нужен
+        });
     
     // Закрытие модальных окон по Escape
     document.addEventListener('keydown', (e) => {
@@ -108,7 +158,7 @@ function setupEventListeners() {
 // ============ ЗАГРУЗКА СТАТИСТИКИ ============
 async function loadStats() {
     try {
-        const response = await fetch(`${API_URL}/stats`);
+        const response = await fetchWithAuth(`${API_URL}/stats`);
         const data = await response.json();
         
         // Обновляем счетчики
@@ -129,7 +179,7 @@ async function loadStats() {
 async function loadClients(status = null) {
     try {
         const url = status ? `${API_URL}/clients?status=${status}` : `${API_URL}/clients`;
-        const response = await fetch(url);
+        const response = await fetchWithAuth(url);
         const data = await response.json();
         
         const clientsList = document.getElementById('clientsList');
@@ -137,28 +187,58 @@ async function loadClients(status = null) {
         if (data.clients.length === 0) {
             clientsList.innerHTML = `
                 <div class="empty-state">
-                    <div class="empty-icon">👥</div>
-                    <p>Нет клиентов${status ? ` со статусом "${status}"` : ''}</p>
-                    <button class="btn btn-secondary" onclick="showAddClientModal()">
-                        Добавить клиента
-                    </button>
+                    <div class="empty-icon">📭</div>
+                    <p>Клиенты ${status ? `со статусом "${status}"` : ''} не найдены</p>
+                    <button class="btn btn-secondary" onclick="showAddClientModal()">Добавить первого клиента</button>
                 </div>
             `;
             return;
         }
         
         clientsList.innerHTML = data.clients.map(client => {
-            // Преобразуем ID в строку для безопасности
             const clientIdStr = String(client.id);
             const isSelected = selectedClientId === clientIdStr;
+            const balance = client.balance || 0;
+            const balanceClass = balance >= 0 ? 'balance-positive' : 'balance-negative';
+            
+            // ========== НОВЫЙ КОД: РАСЧЕТ РЕЙТИНГА ==========
+            const rating = client.rating || 3.0;
+            const fullStars = Math.floor(rating);
+            const hasHalfStar = (rating % 1) >= 0.5;
+            const emptyStars = 5 - fullStars - (hasHalfStar ? 1 : 0);
+            
+            let starsHTML = '';
+            for (let i = 0; i < fullStars; i++) {
+                starsHTML += '★';
+            }
+            if (hasHalfStar) {
+                starsHTML += '☆';
+            }
+            for (let i = 0; i < emptyStars; i++) {
+                starsHTML += '☆';
+            }
+            // ========== КОНЕЦ НОВОГО КОДА ==========
             
             return `
-                <div class="client-card ${isSelected ? 'selected' : ''}" 
-                     onclick="selectClient('${escapeHtml(clientIdStr)}')">
-                    <div class="client-name">${escapeHtml(client.name)}</div>
-                    <div class="client-info">📧 ${escapeHtml(client.email || 'Не указан')}</div>
-                    <div class="client-info">📱 ${escapeHtml(client.phone || 'Не указан')}</div>
-                    <span class="client-status ${client.status}">
+                <div class="client-card ${isSelected ? 'selected' : ''}" onclick="selectClient('${escapeHtml(clientIdStr)}')">
+                    <div class="client-header">
+                        <div class="client-info-left">
+                            <div class="client-name">${escapeHtml(client.name)}</div>
+                            <div class="client-info">📧 ${escapeHtml(client.email)}</div>
+                            <div class="client-info">📱 ${escapeHtml(client.phone)}</div>
+                        </div>
+                        <div class="client-balance ${balanceClass}">
+                            <div class="balance-label">Баланс</div>
+                            <div class="balance-value">${formatMoney(balance)}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="client-rating" title="Рейтинг: ${rating}/5">
+                        <span class="rating-stars">${starsHTML}</span>
+                        <span class="rating-value">${rating.toFixed(1)}</span>
+                    </div>
+                    
+                    <span class="client-status client-status-${client.status}">
                         ${getStatusLabel(client.status)}
                     </span>
                 </div>
@@ -166,8 +246,8 @@ async function loadClients(status = null) {
         }).join('');
         
     } catch (error) {
-        console.error('❌ Ошибка загрузки клиентов:', error);
-        showNotification('Ошибка загрузки клиентов', 'error');
+        console.error('Ошибка загрузки клиентов:', error);
+        showNotification('Ошибка загрузки списка клиентов', 'error');
     }
 }
 
@@ -188,7 +268,6 @@ async function selectClient(clientId) {
     // Сохраняем ID как строку
     selectedClientId = String(clientId);
     
-    console.log('Выбран клиент:', selectedClientId);
     
     // Обновляем визуальное выделение
     await loadClients(currentFilter === 'all' ? null : currentFilter);
@@ -203,9 +282,8 @@ async function selectClient(clientId) {
 
 async function loadClientDetails(clientId) {
     try {
-        console.log('Загрузка деталей клиента:', clientId);
         
-        const response = await fetch(`${API_URL}/clients/${encodeURIComponent(clientId)}`);
+        const response = await fetchWithAuth(`${API_URL}/clients/${encodeURIComponent(clientId)}`);
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -213,7 +291,6 @@ async function loadClientDetails(clientId) {
         
         const data = await response.json();
         
-        console.log('Получены данные клиента:', data);
         
         const detailsHtml = `
             <h3 style="margin-bottom: 16px; color: var(--text-primary);">
@@ -319,7 +396,7 @@ async function addClient(event) {
     };
     
     try {
-        const response = await fetch(`${API_URL}/clients`, {
+        const response = await fetchWithAuth(`${API_URL}/clients`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -366,7 +443,7 @@ async function addTransaction(event) {
     };
     
     try {
-        const response = await fetch(`${API_URL}/transactions`, {
+        const response = await fetchWithAuth(`${API_URL}/transactions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -417,7 +494,7 @@ async function askAI() {
     document.getElementById('suggestedQuestions').style.display = 'none';
     
     try {
-        const response = await fetch(`${API_URL}/ai/ask`, {
+        const response = await fetchWithAuth(`${API_URL}/ai/ask`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -468,7 +545,7 @@ async function loadSuggestedQuestions(clientId) {
             ? `${API_URL}/ai/suggestions?client_id=${clientId}` 
             : `${API_URL}/ai/suggestions`;
             
-        const response = await fetch(url);
+        const response = await fetchWithAuth(url);
         const data = await response.json();
         
         if (data.suggestions && data.suggestions.length > 0) {
@@ -578,6 +655,7 @@ function showNotification(message, type = 'info') {
     // Для production можно добавить toast-уведомления
     // Например, используя библиотеку Toastify или создать кастомные
 }
+
 
 // ============ ЭКСПОРТ ДЛЯ ГЛОБАЛЬНОГО ИСПОЛЬЗОВАНИЯ ============
 window.loadStats = loadStats;
