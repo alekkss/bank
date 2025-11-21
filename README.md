@@ -775,9 +775,7 @@ text
 
 **Александр**
 - Python developer специализирующийся на автоматизации бизнес-процессов с AI
-- GitHub: [@yourusername](https://github.com/yourusername)
-- Email: your.email@example.com
-- Telegram: @yourtelegram
+- Telegram: @ADorin1
 
 ---
 
@@ -794,8 +792,7 @@ text
 
 Если у вас возникли вопросы или проблемы:
 
-- 📧 Email: support@ai-crm.com
-- 💬 Telegram: @ai_crm_support
+- 💬 Telegram: @ADorin1
 - 🐛 Issues: [GitHub Issues](https://github.com/yourusername/ai-crm/issues)
 - 📖 Wiki: [Project Wiki](https://github.com/yourusername/ai-crm/wiki)
 
