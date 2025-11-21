@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ФинАналитик AI</title>
+    <title>AI-Ассистент Менеджера</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <script src="{{ url_for('static', filename='app.js') }}"></script>
 </head>
@@ -13,14 +13,18 @@
         <header>
             <h1>
                 <span class="logo-icon">🤖</span>
-                ФинАналитик AI
+                AI-Ассистент Менеджера
             </h1>
-            <div class="header-actions">
-                <button class="btn btn-primary" onclick="showAddClientModal()">
-                    <span>+</span> Добавить клиента
+            <div style="display: flex; gap: 12px; align-items: center;">
+                <button id="logoutBtn" class="btn-logout">
+                    🚪 Выйти
+                </button>
+                <button id="addClientBtn" class="btn" onclick="showAddClientModal()">
+                    ➕ Добавить клиента
                 </button>
             </div>
         </header>
+
 
         <!-- Статистика -->
         <div class="stats-container" id="statsContainer">
@@ -130,7 +134,7 @@
                 <h3>Новый клиент</h3>
                 <button class="modal-close" onclick="closeModal('addClientModal')">×</button>
             </div>
-            <form id="addClientForm" onsubmit="addClient(event)">
+            <form id="addClientForm">
                 <div class="form-group">
                     <label>Имя *</label>
                     <input type="text" id="clientName" required placeholder="Иван Иванов">
@@ -152,12 +156,8 @@
                     </select>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" onclick="closeModal('addClientModal')">
-                        Отмена
-                    </button>
-                    <button type="submit" class="btn btn-primary">
-                        <span>✓</span> Сохранить
-                    </button>
+                    <button type="button" class="btn btn-secondary" onclick="closeAllModals()">Отмена</button>
+                    <button type="button" class="btn btn-primary" id="saveClientBtn">Сохранить</button>
                 </div>
             </form>
         </div>
@@ -231,6 +231,6 @@
         </div>
     </div>
 
-    <script src="app.js"></script>
+    
 </body>
 </html>
